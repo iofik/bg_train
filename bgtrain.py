@@ -2,7 +2,7 @@
 REROLL_TEXT = 'REROLL'
 TESSERACT_HDR = ['level', 'page_num', 'block_num', 'par_num', 'line_num',
         'word_num', 'left', 'top', 'width', 'height', 'conf', 'text']
-TOTAL_ROLL_OFF = 120, -72
+TOTAL_ROLL_OFF = 122, -72
 TOTAL_ROLL_SIZE = 40, 26
 DEFAULT_THRESHOLD = 90
 
