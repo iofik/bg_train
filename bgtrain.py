@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
+DEC_CLICKS = 5
+INC_CLICKS = 15
+TOTAL_THRESHOLD = 90
+EXCSTR_THRESHOLD = 76
+TOTAL_REG_OFF = 114, -76
+TOTAL_REG_SIZE = 40, 26
+STR_REG_OFF = -88, 2
+STR_REG_SIZE = 64, 32
+CHA_DEC_OFF = 268, -120
+ABIL_BUT_OFF = -48, -54
 REROLL_TEXT = 'REROLL'
 TESSERACT_HDR = ['level', 'page_num', 'block_num', 'par_num', 'line_num',
         'word_num', 'left', 'top', 'width', 'height', 'conf', 'text']
-TOTAL_REG_OFF = 122, -72
-TOTAL_REG_SIZE = 40, 26
-STR_REG_OFF = -88, 0
-STR_REG_SIZE = 60, 28
-CHA_DEC_OFF = 268, -120
-ABIL_BUT_OFF = -48, -54
-TOTAL_THRESHOLD = 90
-EXCSTR_THRESHOLD = 76
 
 from PIL import ImageGrab
 import sys
@@ -22,7 +24,7 @@ def prepare_image(image):
     image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-    return thresh
+    return thresh #cv2.bitwise_not(gray)
 
 def find_reroll():
     img = ImageGrab.grab()
@@ -43,15 +45,15 @@ def find_reroll():
 def get_total(region):
     img = ImageGrab.grab(bbox=region)
     img = prepare_image(img)
-    custom_config = r'--oem 3 --psm 6 outputbase digits'
-    total_str = pytesseract.image_to_string(img, config=custom_config).strip()
+    config = r'--oem 3 --psm 7 outputbase digits'
+    total_str = pytesseract.image_to_string(img, config=config).strip()
     return int(total_str)
 
 def get_excstr(region):
     img = ImageGrab.grab(bbox=region)
     img = prepare_image(img)
-    custom_config = r'--oem 3 --psm 6 outputbase'
-    strexc_str = pytesseract.image_to_string(img, config=custom_config).strip()
+    config = r'--oem 3 --psm 6 outputbase'
+    strexc_str = pytesseract.image_to_string(img, config=config).strip().strip(',.')
     assert len(strexc_str) == 5 and strexc_str[:3] == '18/'
     excstr = int(strexc_str[3:])
     return excstr or 100
@@ -76,8 +78,6 @@ def calc_str_region(str_inc_button):
             x+STR_REG_SIZE[0]//2, y+STR_REG_SIZE[1]//2]
 
 def show_excstr(dec_buttons, inc_button):
-    DEC_CLICKS = 5
-    INC_CLICKS = 15
     pos = pyautogui.position()
     for button in dec_buttons:
         pyautogui.moveTo(button)
