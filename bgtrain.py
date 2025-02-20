@@ -3,8 +3,8 @@ DEC_CLICKS = 5
 INC_CLICKS = 15
 TOTAL_THRESHOLD = 90
 EXCSTR_THRESHOLD = 76
-TOTAL_REG_OFF = 114, -76
-TOTAL_REG_SIZE = 40, 26
+TOTAL_REG_OFF = 116, -74
+TOTAL_REG_SIZE = 36, 24
 STR_REG_OFF = -88, 2
 STR_REG_SIZE = 64, 32
 CHA_DEC_OFF = 268, -120
@@ -21,10 +21,9 @@ import pytesseract
 import pyautogui
 
 def prepare_image(image):
-    image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-    return thresh #cv2.bitwise_not(gray)
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+    #return cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)[1]
+    return cv2.bitwise_not(gray)
 
 def find_reroll():
     img = ImageGrab.grab()
@@ -45,7 +44,7 @@ def find_reroll():
 def get_total(region):
     img = ImageGrab.grab(bbox=region)
     img = prepare_image(img)
-    config = r'--oem 3 --psm 7 outputbase digits'
+    config = r'--oem 3 --psm 6 outputbase digits'
     total_str = pytesseract.image_to_string(img, config=config).strip()
     return int(total_str)
 
