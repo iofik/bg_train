@@ -22,7 +22,7 @@ import pytesseract
 import pyautogui
 
 def vec_sum(a, b):
-    return [x + y for (x, y) in zip(a, b)]
+    return tuple(x + y for (x, y) in zip(a, b))
 
 def adjust_sizes(ratio):
     if sys.platform == 'darwin':
