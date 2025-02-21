@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 DEC_CLICKS = 5
 INC_CLICKS = 15
-SLEEP_TIME = 10
+CHECK_TIME = 1
+SLEEP_TIME = 120
 TOTAL_THRESHOLD = 90
 EXCSTR_THRESHOLD = 76
-TOTAL_REG_OFF = 116, -72
-TOTAL_REG_SIZE = 36, 20
-STR_REG_OFF = -88, 2
-STR_REG_SIZE = 64, 32
+TOTAL_BOX_OFF = 116, -72
+TOTAL_BOX_SIZE = 36, 20
+STR_BOX_OFF = -88, 2
+STR_BOX_SIZE = 64, 32
 CHA_DEC_OFF = 266, -114
 ABIL_BUT_OFF = -48, -54
 REROLL_TEXT = 'REROLL'
@@ -31,10 +32,10 @@ def scale_sizes(scale):
         scale = [x/2 for x in scale]
     def adj(sz):
         return [int(a*b) for (a, b) in zip(sz, scale)]
-    for s in ('TOTAL_REG_OFF',
-              'TOTAL_REG_SIZE',
-              'STR_REG_OFF',
-              'STR_REG_SIZE',
+    for s in ('TOTAL_BOX_OFF',
+              'TOTAL_BOX_SIZE',
+              'STR_BOX_OFF',
+              'STR_BOX_SIZE',
               'CHA_DEC_OFF',
               'ABIL_BUT_OFF'):
         globals()[s] = adj(globals()[s])
@@ -60,20 +61,22 @@ def find_reroll():
             for k in ('left', 'top', 'width', 'height'))
     scale = [int(rrll[hdr[b]]) / REROLL_SIZE[a]
             for (a, b) in enumerate(('width', 'height'))]
-    button = (left + wdth//2, top + hght//2)
+    center = (left + wdth//2, top + hght//2)
+    box = (left, top, left + wdth, top + hght)
     if sys.platform == 'darwin': # Retina display
-        button = tuple(x//2 for x in button)
-    return button, scale
+        center = tuple(x//2 for x in center)
+        box = tuple(x//2 for x in box)
+    return center, box, scale
 
-def get_total(region):
-    img = ImageGrab.grab(bbox=region)
+def get_total(box):
+    img = ImageGrab.grab(bbox=box)
     img = prepare_image(img)
     config = r'--oem 3 --psm 6 outputbase digits'
     total_str = pytesseract.image_to_string(img, config=config).strip()
     return int(total_str)
 
-def get_excstr(region):
-    img = ImageGrab.grab(bbox=region)
+def get_excstr(box):
+    img = ImageGrab.grab(bbox=box)
     img = prepare_image(img)
     config = r'--oem 3 --psm 6 outputbase'
     strexc_str = pytesseract.image_to_string(img, config=config).strip().strip(',.')
@@ -81,23 +84,23 @@ def get_excstr(region):
     excstr = int(strexc_str[3:])
     return excstr or 100
 
-def calc_total_region(button):
-    region = vec_sum(button, TOTAL_REG_OFF)
-    region += vec_sum(region, TOTAL_REG_SIZE)
-    return region
+def calc_total_box(button):
+    box = vec_sum(button, TOTAL_BOX_OFF)
+    box += vec_sum(box, TOTAL_BOX_SIZE)
+    return box
 
-def calc_dec_buttons(reroll_button):
-    cha_dec = vec_sum(reroll_button, CHA_DEC_OFF)
+def calc_dec_buttons(reroll_center):
+    cha_dec = vec_sum(reroll_center, CHA_DEC_OFF)
     abil_dec = [(cha_dec[0], cha_dec[1] + i*ABIL_BUT_OFF[1]) for i in range(5)]
     return abil_dec
 
 def calc_inc_button(dex_dec_button):
     return vec_sum(dex_dec_button, ABIL_BUT_OFF)
 
-def calc_str_region(str_inc_button):
-    x, y = vec_sum(str_inc_button, STR_REG_OFF)
-    return [x-STR_REG_SIZE[0]//2, y-STR_REG_SIZE[1]//2,
-            x+STR_REG_SIZE[0]//2, y+STR_REG_SIZE[1]//2]
+def calc_str_box(str_inc_button):
+    x, y = vec_sum(str_inc_button, STR_BOX_OFF)
+    return [x-STR_BOX_SIZE[0]//2, y-STR_BOX_SIZE[1]//2,
+            x+STR_BOX_SIZE[0]//2, y+STR_BOX_SIZE[1]//2]
 
 def show_excstr(dec_buttons, inc_button):
     pos = pyautogui.position()
@@ -115,42 +118,50 @@ def show_excstr(dec_buttons, inc_button):
     pyautogui.moveTo(pos)
     return True
 
-def wait_idle():
+def wait_idle(reroll_box):
     try:
-        pos = pyautogui.position()
-        while True:
-            time.sleep(SLEEP_TIME)
-            new_pos = pyautogui.position()
-            if pos == new_pos:
-                return True
-            pos = new_pos
+        max_idle_cycles = (SLEEP_TIME - 1) // CHECK_TIME + 1
+        last_pos = pyautogui.position()
+        idle_cycles = max_idle_cycles
+        while idle_cycles:
+            time.sleep(CHECK_TIME)
+            pos = pyautogui.position()
+            if reroll_box[0] <= pos[0] <= reroll_box[2] and reroll_box[1] <= pos[1] <= reroll_box[3]:
+                break
+            if pos == last_pos:
+                idle_cycles -= 1
+            else:
+                idle_cycles = max_idle_cycles
+                last_pos = pos
     except KeyboardInterrupt:
         return False
+    return True
 
 def main(total_threshold, excstr_threshold):
-    button, scale = find_reroll()
+    reroll_center, reroll_box, scale = find_reroll()
     scale_sizes(scale)
     print(f"Threshold: {total_threshold}/{excstr_threshold}")
-    print(f"Reroll button at: {button}")
+    print(f"Reroll button at: {reroll_center}")
     print(f"Scale factor: ({scale[0]:.3g}, {scale[1]:.3g})")
     if any(abs(x - 1) > 0.001 for x in scale):
         print("Warning: Scaling does not work reliably! "
-                "Resize game window to make scaling (1, 1)")
-    total_region = calc_total_region(button)
-    dec_buttons = calc_dec_buttons(button)
+                "Resize game window to make scaling (1, 1) and restart BG trainer.")
+    print("Do not move the game window, make it always visible on screen.")
+    total_box = calc_total_box(reroll_center)
+    dec_buttons = calc_dec_buttons(reroll_center)
     inc_button = calc_inc_button(dec_buttons[-1])
-    str_region = calc_str_region(inc_button)
-    pyautogui.moveTo(button)
+    str_box = calc_str_box(inc_button)
+    pyautogui.moveTo(reroll_center)
     print(f"Total Roll:", end=' ', flush=True)
     def should_proceed():
         print('...', end=' ', flush=True)
-        if wait_idle():
-            pyautogui.moveTo(button)
+        if wait_idle(reroll_box):
+            pyautogui.moveTo(reroll_center)
             return True
         print('- break!')
         return False
     while True:
-        total = get_total(total_region)
+        total = get_total(total_box)
         if total < total_threshold:
             print(total, end=' ', flush=True)
         else:
@@ -158,12 +169,12 @@ def main(total_threshold, excstr_threshold):
                 if should_proceed():
                     continue
                 break
-            excstr = get_excstr(str_region)
+            excstr = get_excstr(str_box)
             print(f"{total}/{excstr}", end=' ', flush=True)
             if excstr >= excstr_threshold:
                 print('- found!')
                 break
-        if pyautogui.position() != button:
+        if pyautogui.position() != reroll_center:
             if should_proceed():
                 continue
             break
