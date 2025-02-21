@@ -10,6 +10,7 @@ STR_REG_SIZE = 64, 32
 CHA_DEC_OFF = 268, -120
 ABIL_BUT_OFF = -48, -54
 REROLL_TEXT = 'REROLL'
+REROLL_SIZE = 76, 15
 TESSERACT_HDR = ['level', 'page_num', 'block_num', 'par_num', 'line_num',
         'word_num', 'left', 'top', 'width', 'height', 'conf', 'text']
 
@@ -19,6 +20,22 @@ import cv2
 import numpy as np
 import pytesseract
 import pyautogui
+
+def vec_sum(a, b):
+    return [x + y for (x, y) in zip(a, b)]
+
+def adjust_sizes(ratio):
+    if sys.platform == 'darwin':
+        ratio = [x/2 for x in ratio]
+    def adj(sz):
+        return [int(a*b) for (a, b) in zip(sz, ratio)]
+    for s in ('TOTAL_REG_OFF',
+              'TOTAL_REG_SIZE',
+              'STR_REG_OFF',
+              'STR_REG_SIZE',
+              'CHA_DEC_OFF',
+              'ABIL_BUT_OFF'):
+        globals()[s] = adj(globals()[s])
 
 def prepare_image(image):
     gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
@@ -35,11 +52,16 @@ def find_reroll():
     img_data = img_data[1:-1]
     assert {len(d) for d in img_data} == {12}
     rrll_idx = next(i for i, d in enumerate(img_data) if d[11] == REROLL_TEXT)
-    rrll_data = img_data[rrll_idx]
-    hdr_map = {fld:idx for idx, fld in enumerate(TESSERACT_HDR)}
-    left, top, wdth, hght = [int(rrll_data[hdr_map[k]])
+    rrll = img_data[rrll_idx]
+    hdr = {fld:idx for idx, fld in enumerate(TESSERACT_HDR)}
+    left, top, wdth, hght = [int(rrll[hdr[k]])
             for k in ('left', 'top', 'width', 'height')]
-    return left + wdth//2, top + hght//2
+    ratio = [int(rrll[hdr[b]]) / REROLL_SIZE[a]
+            for (a, b) in enumerate(('width', 'height'))]
+    button = (left + wdth//2, top + hght//2)
+    if sys.platform == 'darwin': # Retina display
+        button = tuple(x//2 for x in button)
+    return button, ratio
 
 def get_total(region):
     img = ImageGrab.grab(bbox=region)
@@ -58,21 +80,20 @@ def get_excstr(region):
     return excstr or 100
 
 def calc_total_region(button):
-    region = [button[i] + TOTAL_REG_OFF[i] for i in (0, 1)]
-    region.extend([region[i] + TOTAL_REG_SIZE[i] for i in (0, 1)])
+    region = vec_sum(button, TOTAL_REG_OFF)
+    region += vec_sum(region, TOTAL_REG_SIZE)
     return region
 
 def calc_dec_buttons(reroll_button):
-    cha_dec = [reroll_button[i] + CHA_DEC_OFF[i] for i in (0, 1)]
+    cha_dec = vec_sum(reroll_button, CHA_DEC_OFF)
     abil_dec = [(cha_dec[0], cha_dec[1] + i*ABIL_BUT_OFF[1]) for i in range(5)]
     return abil_dec
 
 def calc_inc_button(dex_dec_button):
-    str_inc = tuple(dex_dec_button[i] + ABIL_BUT_OFF[i] for i in (0, 1))
-    return str_inc
+    return vec_sum(dex_dec_button, ABIL_BUT_OFF)
 
 def calc_str_region(str_inc_button):
-    x, y = [str_inc_button[i] + STR_REG_OFF[i] for i in (0, 1)]
+    x, y = vec_sum(str_inc_button, STR_REG_OFF)
     return [x-STR_REG_SIZE[0]//2, y-STR_REG_SIZE[1]//2,
             x+STR_REG_SIZE[0]//2, y+STR_REG_SIZE[1]//2]
 
@@ -93,7 +114,8 @@ def show_excstr(dec_buttons, inc_button):
     return True
 
 def main(total_threshold, excstr_threshold):
-    button = find_reroll()
+    button, coord_ratio = find_reroll()
+    adjust_sizes(coord_ratio)
     print(f"Threshold: {total_threshold}/{excstr_threshold}")
     print(f"Reroll button at: {button}")
     total_region = calc_total_region(button)
