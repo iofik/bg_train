@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 DEC_CLICKS = 5
 INC_CLICKS = 15
+SLEEP_TIME = 10
 TOTAL_THRESHOLD = 90
 EXCSTR_THRESHOLD = 76
 TOTAL_REG_OFF = 116, -72
 TOTAL_REG_SIZE = 36, 20
 STR_REG_OFF = -88, 2
 STR_REG_SIZE = 64, 32
-CHA_DEC_OFF = 268, -120
+CHA_DEC_OFF = 266, -114
 ABIL_BUT_OFF = -48, -54
 REROLL_TEXT = 'REROLL'
 REROLL_SIZE = 76, 15
@@ -16,6 +17,7 @@ TESSERACT_HDR = ['level', 'page_num', 'block_num', 'par_num', 'line_num',
 
 from PIL import ImageGrab
 import sys
+import time
 import cv2
 import numpy as np
 import pytesseract
@@ -24,11 +26,11 @@ import pyautogui
 def vec_sum(a, b):
     return tuple(x + y for (x, y) in zip(a, b))
 
-def adjust_sizes(ratio):
+def scale_sizes(scale):
     if sys.platform == 'darwin':
-        ratio = [x/2 for x in ratio]
+        scale = [x/2 for x in scale]
     def adj(sz):
-        return [int(a*b) for (a, b) in zip(sz, ratio)]
+        return [int(a*b) for (a, b) in zip(sz, scale)]
     for s in ('TOTAL_REG_OFF',
               'TOTAL_REG_SIZE',
               'STR_REG_OFF',
@@ -54,14 +56,14 @@ def find_reroll():
     rrll_idx = next(i for i, d in enumerate(img_data) if d[11] == REROLL_TEXT)
     rrll = img_data[rrll_idx]
     hdr = {fld:idx for idx, fld in enumerate(TESSERACT_HDR)}
-    left, top, wdth, hght = [int(rrll[hdr[k]])
-            for k in ('left', 'top', 'width', 'height')]
-    ratio = [int(rrll[hdr[b]]) / REROLL_SIZE[a]
+    left, top, wdth, hght = (int(rrll[hdr[k]])
+            for k in ('left', 'top', 'width', 'height'))
+    scale = [int(rrll[hdr[b]]) / REROLL_SIZE[a]
             for (a, b) in enumerate(('width', 'height'))]
     button = (left + wdth//2, top + hght//2)
     if sys.platform == 'darwin': # Retina display
         button = tuple(x//2 for x in button)
-    return button, ratio
+    return button, scale
 
 def get_total(region):
     img = ImageGrab.grab(bbox=region)
@@ -113,24 +115,48 @@ def show_excstr(dec_buttons, inc_button):
     pyautogui.moveTo(pos)
     return True
 
+def wait_idle():
+    try:
+        pos = pyautogui.position()
+        while True:
+            time.sleep(SLEEP_TIME)
+            new_pos = pyautogui.position()
+            if pos == new_pos:
+                return True
+            pos = new_pos
+    except KeyboardInterrupt:
+        return False
+
 def main(total_threshold, excstr_threshold):
-    button, coord_ratio = find_reroll()
-    adjust_sizes(coord_ratio)
+    button, scale = find_reroll()
+    scale_sizes(scale)
     print(f"Threshold: {total_threshold}/{excstr_threshold}")
     print(f"Reroll button at: {button}")
+    print(f"Scale factor: ({scale[0]:.3g}, {scale[1]:.3g})")
+    if any(abs(x - 1) > 0.001 for x in scale):
+        print("Warning: Scaling does not work reliably! "
+                "Resize game window to make scaling (1, 1)")
     total_region = calc_total_region(button)
     dec_buttons = calc_dec_buttons(button)
     inc_button = calc_inc_button(dec_buttons[-1])
     str_region = calc_str_region(inc_button)
     pyautogui.moveTo(button)
     print(f"Total Roll:", end=' ', flush=True)
+    def should_proceed():
+        print('...', end=' ', flush=True)
+        if wait_idle():
+            pyautogui.moveTo(button)
+            return True
+        print('- break!')
+        return False
     while True:
         total = get_total(total_region)
         if total < total_threshold:
             print(total, end=' ', flush=True)
         else:
             if not show_excstr(dec_buttons, inc_button):
-                print('- break!')
+                if should_proceed():
+                    continue
                 break
             excstr = get_excstr(str_region)
             print(f"{total}/{excstr}", end=' ', flush=True)
@@ -138,7 +164,8 @@ def main(total_threshold, excstr_threshold):
                 print('- found!')
                 break
         if pyautogui.position() != button:
-            print('- break!')
+            if should_proceed():
+                continue
             break
         pyautogui.click()
 
