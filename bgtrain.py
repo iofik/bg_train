@@ -3,8 +3,6 @@ DEC_CLICKS = 5
 INC_CLICKS = 15
 CHECK_TIME = 1
 SLEEP_TIME = 120
-TOTAL_THRESHOLD = 90
-EXCSTR_THRESHOLD = 76
 TOTAL_BOX_OFF = 116, -72
 TOTAL_BOX_SIZE = 36, 20
 STR_BOX_OFF = -88, 2
@@ -137,13 +135,28 @@ def wait_idle(reroll_box):
         return False
     return True
 
-def main(total_threshold, excstr_threshold):
+class Threshold:
+    @classmethod
+    def from_str(cls, s: str):
+        return cls(*map(int, s.split('/')))
+    def __init__(self, total: int, excstr: int):
+        self.total = total
+        self.excstr = excstr
+    def __ge__(self, other):
+        return self.total >= other.total and self.excstr >= other.excstr
+    def __str__(self) -> str:
+        return f'{self.total}/{self.excstr}'
+    def __repr__(self) -> str:
+        return str(self)
+
+def main(thresholds: list[Threshold]):
+    min_total = min(t.total for t in thresholds)
     reroll_center, reroll_box, scale = find_reroll()
     scale_sizes(scale)
-    print(f"Threshold: {total_threshold}/{excstr_threshold}")
+    print(f"Thresholds: {', '.join(map(str, thresholds))}")
     print(f"Reroll button at: {reroll_center}")
     print(f"Scale factor: ({scale[0]:.3g}, {scale[1]:.3g})")
-    if any(abs(x - 1) > 0.001 for x in scale):
+    if any(abs(x - 1) > 0.01 for x in scale):
         print("Warning: Scaling does not work reliably! "
                 "Resize game window to make scaling (1, 1) and restart BG trainer.")
     print("Do not move the game window, make it always visible on screen.")
@@ -162,16 +175,17 @@ def main(total_threshold, excstr_threshold):
         return False
     while True:
         total = get_total(total_box)
-        if total < total_threshold:
+        if total < min_total:
             print(total, end=' ', flush=True)
         else:
             if not show_excstr(dec_buttons, inc_button):
                 if should_proceed():
                     continue
                 break
-            excstr = get_excstr(str_box)
-            print(f"{total}/{excstr}", end=' ', flush=True)
-            if excstr >= excstr_threshold:
+            roll = Threshold(total, get_excstr(str_box))
+            print(f"{roll}", end=' ', flush=True)
+            if any(roll >= t for t in thresholds):
+                pyautogui.moveTo(inc_button) # Avoid accidental click on Reroll
                 print('- found!')
                 break
         if pyautogui.position() != reroll_center:
@@ -181,6 +195,10 @@ def main(total_threshold, excstr_threshold):
         pyautogui.click()
 
 if __name__ == '__main__':
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else TOTAL_THRESHOLD,
-         int(sys.argv[2]) if len(sys.argv) > 2 else EXCSTR_THRESHOLD)
-
+    try:
+        thresholds = list(map(Threshold.from_str, sys.argv[1:]))
+        thresholds[0]
+    except:
+        print(f"Usage: {sys.argv[0]} TOTAL/EXCSTR [...]")
+    else:
+        main(thresholds)
