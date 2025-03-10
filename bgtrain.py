@@ -66,18 +66,28 @@ def find_reroll():
         box = tuple(x//2 for x in box)
     return center, box, scale
 
+_image_to_string_cache = {}
+_image_to_string_config = [
+    '--oem 3 --psm 6 outputbase',
+    '--oem 3 --psm 6 outputbase digits',
+]
+
+def image_to_string(img, digits=False):
+    args = (img.tobytes(), digits)
+    if args not in _image_to_string_cache:
+        img = prepare_image(img)
+        _image_to_string_cache[args] = pytesseract.image_to_string(
+                img, config=_image_to_string_config[digits]).strip()
+    return _image_to_string_cache[args]
+
 def get_total(box):
     img = ImageGrab.grab(bbox=box)
-    img = prepare_image(img)
-    config = r'--oem 3 --psm 6 outputbase digits'
-    total_str = pytesseract.image_to_string(img, config=config).strip()
+    total_str = image_to_string(img, digits=True)
     return int(total_str)
 
 def get_excstr(box):
     img = ImageGrab.grab(bbox=box)
-    img = prepare_image(img)
-    config = r'--oem 3 --psm 6 outputbase'
-    strexc_str = pytesseract.image_to_string(img, config=config).strip().strip(',.')
+    strexc_str = image_to_string(img, digits=False).strip(',.')
     assert len(strexc_str) == 5 and strexc_str[:3] == '18/'
     excstr = int(strexc_str[3:])
     return excstr or 100
